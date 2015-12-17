@@ -26,9 +26,8 @@ void _sleep(int64_t ms)
 }
 
 const double mean = 0;
-const double sgm = 0.7;
+const double sgm = 3;
 
-std::random_device rd;
 std::atomic<bool> done(false);
 
 namespace automatic_control{
@@ -39,7 +38,6 @@ namespace automatic_control{
  */
 struct pidregulator{
 	double current;
-	double speed;
 	double needed;
 	double prev_error;
 	double intg;		/// integreal value
@@ -48,7 +46,6 @@ struct pidregulator{
 	double coeff2;		/// coefficient for integral part
 	double coeff3;		/// coefficient for diffirential part
 	int counter;
-	std::normal_distribution<double> distr;
 
 	pidregulator(){
 		init();
@@ -73,11 +70,9 @@ struct pidregulator{
 		current		= 0;
 		needed		= 0;
 		intg		= 0;
-		speed		= 0;
 		counter		= 0;
 		prev_error	= 0;
 		coeff0 = coeff1 = coeff2 = coeff3 = 0;
-		distr = std::normal_distribution<double>(mean, sgm);
 	}
 	/**
 	 * @brief error
@@ -122,29 +117,39 @@ struct pidregulator{
 		res1 = proportional();
 		res2 = integral();
 		res3 = diff();
-		speed += coeff0 * (res1 + res2 + res3);
+		current += coeff0 * (res1 + res2 + res3);
 
 		char buf[512];
-		sprintf(buf, "%d\tc[%f]\tp[%f]\ti[%f]\td[%f]\tspd[%f]", counter, current,
-				res1, res2, res3, speed);
+		sprintf(buf, "%d\tc[%f]\tp[%f]\ti[%f]\td[%f]", counter, current,
+				res1, res2, res3);
 		cout << buf << endl;
 		counter++;
-	}
-	/**
-	 * @brief new_current
-	 */
-	void new_current(){
-		double rnd = distr(rd);
-		speed += rnd;
-		current += speed;
 	}
 };
 
 }
 
+struct generate_value{
+	std::normal_distribution<double> distr;
+	std::random_device rd;
+
+	generate_value(){
+		distr = std::normal_distribution<double>(mean, sgm);
+	}
+
+	double operator()(){
+		return distr(rd);
+	}
+
+};
+
+generate_value genval;
+
 void loop_time(automatic_control::pidregulator& pid)
 {
-	pid.new_current();
+	double rnd = genval();
+	//speed += rnd;
+	pid.current += rnd;
 	pid.calc();
 }
 
@@ -193,7 +198,6 @@ cv::Point needed_pt(100, 100);
 cv::Point pt_old(0, 0);
 bool trigger_mouse = false;
 
-
 void show_wnd(cv::Mat& mat, automatic_control::pidregulator& pidx, automatic_control::pidregulator& pidy)
 {
 	if(mat.empty()){
@@ -211,11 +215,6 @@ void show_wnd(cv::Mat& mat, automatic_control::pidregulator& pidx, automatic_con
 	cv::line(mat, pt_old, pt, cv::Scalar(255));
 
 	pt_old = pt;
-
-	pt.x %= mat.cols;
-	if(pt.y >=0 && pt.y < mat.rows){
-		mat.at<u_char>(pt.y, pt.x) = 255;
-	}
 
 	cv::imshow(name_wnd, mat);
 }
@@ -244,12 +243,12 @@ int main()
 	/// loop to get a key
 	pthread_create(&ptr, &pattr, &pthread_run, 0);
 
-	cv::namedWindow(name_wnd, cv::WINDOW_NORMAL);
+	cv::namedWindow(name_wnd);
 	cv::setMouseCallback(name_wnd, mouse_clbck);
 	cv::Mat grph_out;
 
-	automatic_control::pidregulator pidx(100, 0.9, 0.19, 0.001, 0.95);
-	automatic_control::pidregulator pidy(100, 0.9, 0.19, 0.001, 0.95);
+	automatic_control::pidregulator pidx(100, 0.1, 0.7, 0.001, 0.28);
+	automatic_control::pidregulator pidy(100, 0.1, 0.7, 0.001, 0.28);
 	while(!done){
 		loop_time(pidx);
 		loop_time(pidy);
