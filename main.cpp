@@ -13,6 +13,8 @@
 #include <sys/resource.h>
 #include <pthread.h>
 
+#include <opencv2/opencv.hpp>
+
 using namespace std;
 
 void _sleep(int64_t ms)
@@ -142,8 +144,8 @@ struct pidregulator{
 
 void loop_time(automatic_control::pidregulator& pid)
 {
-	pid.calc();
 	pid.new_current();
+	pid.calc();
 }
 
 void handler(int s)
@@ -185,6 +187,47 @@ void* pthread_run(void* user)
 	XCloseDisplay(display);
 }
 
+const string name_wnd("graph");
+
+cv::Point needed_pt(100, 100);
+cv::Point pt_old(0, 0);
+bool trigger_mouse = false;
+
+
+void show_wnd(cv::Mat& mat, automatic_control::pidregulator& pidx, automatic_control::pidregulator& pidy)
+{
+	if(mat.empty()){
+		mat = cv::Mat::zeros(800, 800, CV_8UC1);
+	}
+
+	if(trigger_mouse){
+		pidx.needed = needed_pt.x;
+		pidy.needed = needed_pt.y;
+		trigger_mouse = false;
+	}
+
+	cv::Point pt(pidx.current, pidy.current);
+
+	cv::line(mat, pt_old, pt, cv::Scalar(255));
+
+	pt_old = pt;
+
+	pt.x %= mat.cols;
+	if(pt.y >=0 && pt.y < mat.rows){
+		mat.at<u_char>(pt.y, pt.x) = 255;
+	}
+
+	cv::imshow(name_wnd, mat);
+}
+
+void mouse_clbck(int event, int x, int y, int flags, void* userdata)
+{
+	if(event == cv::EVENT_LBUTTONDOWN){
+		needed_pt = cv::Point(x, y);
+		trigger_mouse = true;
+	}
+}
+
 int main()
 {
 	/// hook ctrl+c
@@ -201,10 +244,18 @@ int main()
 	/// loop to get a key
 	pthread_create(&ptr, &pattr, &pthread_run, 0);
 
-	automatic_control::pidregulator pid(100, 0.9, 0.19, 0.001, 0.95);
+	cv::namedWindow(name_wnd, cv::WINDOW_NORMAL);
+	cv::setMouseCallback(name_wnd, mouse_clbck);
+	cv::Mat grph_out;
+
+	automatic_control::pidregulator pidx(100, 0.9, 0.19, 0.001, 0.95);
+	automatic_control::pidregulator pidy(100, 0.9, 0.19, 0.001, 0.95);
 	while(!done){
-		loop_time(pid);
-		_sleep(300);
+		loop_time(pidx);
+		loop_time(pidy);
+		show_wnd(grph_out, pidx, pidy);
+		_sleep(30);
+		cv::waitKey(1);
 	}
 
 	pthread_join(ptr, 0);
