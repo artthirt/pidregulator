@@ -30,21 +30,31 @@ const double sgm = 3;
 
 std::atomic<bool> done(false);
 
+cv::Vec2d operator* (const cv::Vec2d& v1, const cv::Vec2d & v2)
+{
+	cv::Vec2d res;
+	res[0] = v1[0] * v2[0];
+	res[1] = v1[1] * v2[1];
+	return res;
+}
+
 namespace automatic_control{
 
 /**
  * @brief The pidregulator struct
  * calculation for PID automatic control
  */
+template< class T = double >
 struct pidregulator{
-	double current;
-	double needed;
-	double prev_error;
-	double intg;		/// integreal value
-	double coeff0;		/// coefficient for summator
-	double coeff1;		/// coefficient for protoprtional part
-	double coeff2;		/// coefficient for integral part
-	double coeff3;		/// coefficient for diffirential part
+	T current;
+	T needed;
+	T prev_error;
+	T prev_error2;
+	T intg;			/// integreal value
+	T coeff0;		/// coefficient for summator
+	T coeff1;		/// coefficient for protoprtional part
+	T coeff2;		/// coefficient for integral part
+	T coeff3;		/// coefficient for diffirential part
 	int counter;
 
 	pidregulator(){
@@ -58,7 +68,7 @@ struct pidregulator{
 	 * @param c2	- integral
 	 * @param c3	- diffirential
 	 */
-	pidregulator(double n, double c0, double c1, double c2, double c3){
+	pidregulator(T n, T c0, T c1, T c2, T c3){
 		init();
 		needed = n;
 		coeff0 = c0;
@@ -67,18 +77,19 @@ struct pidregulator{
 		coeff3 = c3;
 	}
 	void init(){
-		current		= 0;
-		needed		= 0;
-		intg		= 0;
 		counter		= 0;
-		prev_error	= 0;
-		coeff0 = coeff1 = coeff2 = coeff3 = 0;
+		current		= T();
+		needed		= T();
+		intg		= T();
+		prev_error	= T();
+		prev_error2 = T();
+		coeff0 = coeff1 = coeff2 = coeff3 = T();
 	}
 	/**
 	 * @brief error
 	 * @return
 	 */
-	inline double error(){
+	inline T error(){
 		return needed - current;
 	}
 	/**
@@ -86,7 +97,7 @@ struct pidregulator{
 	 * proportional part
 	 * @return
 	 */
-	inline double proportional(){
+	inline T proportional(){
 		return coeff1 * error();
 	}
 	/**
@@ -94,7 +105,7 @@ struct pidregulator{
 	 * integral part
 	 * @return
 	 */
-	inline double integral(){
+	inline T integral(){
 		intg += error();
 		return coeff2 * intg;
 	}
@@ -103,8 +114,9 @@ struct pidregulator{
 	 * differential part
 	 * @return
 	 */
-	inline double diff(){
-		double res =  coeff3 * (error() - prev_error);
+	inline T diff(){
+		T res =  coeff3 * (error() - 2. * prev_error + prev_error2);
+		prev_error2 = prev_error;
 		prev_error = error();
 		return res;
 	}
@@ -113,16 +125,14 @@ struct pidregulator{
 	 * calc PID regulator
 	 */
 	void calc(){
-		double res1, res2, res3;
+		T res1, res2, res3;
 		res1 = proportional();
 		res2 = integral();
 		res3 = diff();
 		current += coeff0 * (res1 + res2 + res3);
 
-		char buf[512];
-		sprintf(buf, "%d\tc[%f]\tp[%f]\ti[%f]\td[%f]", counter, current,
-				res1, res2, res3);
-		cout << buf << endl;
+		cout << counter << "\tc[" << current << "]\tp[" << res1 << "]\ti[" << res2 << "]\td[" << res3 << "]\n";
+
 		counter++;
 	}
 };
@@ -145,9 +155,9 @@ struct generate_value{
 
 generate_value genval;
 
-void loop_time(automatic_control::pidregulator& pid)
+void loop_time(automatic_control::pidregulator<cv::Vec2d>& pid)
 {
-	double rnd = genval();
+	cv::Vec2d rnd = cv::Vec2d(genval(), genval());
 	//speed += rnd;
 	pid.current += rnd;
 	pid.calc();
@@ -193,39 +203,102 @@ void* pthread_run(void* user)
 }
 
 const string name_wnd("graph");
+const size_t count_vec = 50;
 
-cv::Point needed_pt(100, 100);
-cv::Point pt_old(0, 0);
-bool trigger_mouse = false;
+struct widget{
 
-void show_wnd(cv::Mat& mat, automatic_control::pidregulator& pidx, automatic_control::pidregulator& pidy)
-{
-	if(mat.empty()){
+	double needed			= 100;
+	bool trigger_mouse		= false;
+	double max_y			= 200;
+	double min_y			= -100;
+	double multiply_tb		= 3;
+	double min_value_tb		= -1;
+	int max_trackbar_val	= 1000;
+	vector<double> data;
+	automatic_control::pidregulator<double> pid;
+	cv::Mat mat;
+
+	widget(){
+
+	}
+
+	void generate(){
+		pid.current = 0;
+		pid.needed = 100;
+		pid.intg = 0;
+		data.resize(0);
+		for(size_t i = 0; i < count_vec; i++){
+			data.push_back(pid.current);
+			pid.calc();
+		}
+
 		mat = cv::Mat::zeros(800, 800, CV_8UC1);
+
+		double x = 0, delta = mat.cols / data.size();
+		double dy = max_y - min_y;
+
+		for(size_t i = 1; i < data.size(); i++){
+			double d1 = data[i - 1];
+			double d2 = data[i];
+			double y1 = (d1 - min_y)/dy * mat.rows;
+			double y2 = (d2 - min_y)/dy * mat.rows;
+
+			cv::Point p1(x, mat.rows - y1), p2(x + delta, mat.rows - y2);
+
+			cv::line(mat, p1, p2, cv::Scalar(255));
+			x += delta;
+		}
 	}
 
-	if(trigger_mouse){
-		pidx.needed = needed_pt.x;
-		pidy.needed = needed_pt.y;
-		trigger_mouse = false;
+
+	void show_wnd()
+	{
+		if(mat.empty()){
+			cv::namedWindow(name_wnd);
+
+			cv::createTrackbar("C0", name_wnd, 0, max_trackbar_val, widget::change_C0, this);
+			cv::createTrackbar("P", name_wnd, 0, max_trackbar_val, widget::change_P, this);
+			cv::createTrackbar("I", name_wnd, 0, max_trackbar_val, widget::change_I, this);
+			cv::createTrackbar("D", name_wnd, 0, max_trackbar_val, widget::change_D, this);
+
+			cv::setTrackbarPos("C0", name_wnd, (pid.coeff0 - min_value_tb) * max_trackbar_val / multiply_tb);
+			cv::setTrackbarPos("P", name_wnd, (pid.coeff1 - min_value_tb) * max_trackbar_val / multiply_tb);
+			cv::setTrackbarPos("I", name_wnd, (pid.coeff2 - min_value_tb) * max_trackbar_val / multiply_tb);
+			cv::setTrackbarPos("D", name_wnd, (pid.coeff3 - min_value_tb) * max_trackbar_val / multiply_tb);
+
+			generate();
+		}
+
+		stringstream ss;
+		ss << "c0[" << pid.coeff0 << "]; p[" << pid.coeff1 << "]; i[" << pid.coeff2 << "]; d[" << pid.coeff3;
+
+		cv::putText(mat, ss.str(), cv::Point(10, 15), 1, 1, cv::Scalar(255));
+		//cv::displayStatusBar(name_wnd, ss.str());
+
+		cv::imshow(name_wnd, mat);
 	}
 
-	cv::Point pt(pidx.current, pidy.current);
-
-	cv::line(mat, pt_old, pt, cv::Scalar(255));
-
-	pt_old = pt;
-
-	cv::imshow(name_wnd, mat);
-}
-
-void mouse_clbck(int event, int x, int y, int flags, void* userdata)
-{
-	if(event == cv::EVENT_LBUTTONDOWN){
-		needed_pt = cv::Point(x, y);
-		trigger_mouse = true;
+	static void change_C0(int pos, void* userdata){
+		widget* w = static_cast<widget*>(userdata);
+		w->pid.coeff0 = w->min_value_tb + 1. * w->multiply_tb * pos / w->max_trackbar_val;
+		w->generate();
 	}
-}
+	static void change_P(int pos, void* userdata){
+		widget* w = static_cast<widget*>(userdata);
+		w->pid.coeff1 = w->min_value_tb + 1. * w->multiply_tb * pos / w->max_trackbar_val;
+		w->generate();
+	}
+	static void change_I(int pos, void* userdata){
+		widget* w = static_cast<widget*>(userdata);
+		w->pid.coeff2 = w->min_value_tb + 1. * w->multiply_tb * pos / w->max_trackbar_val;
+		w->generate();
+	}
+	static void change_D(int pos, void* userdata){
+		widget* w = static_cast<widget*>(userdata);
+		w->pid.coeff3 =  w->min_value_tb + 1. * w->multiply_tb * pos / w->max_trackbar_val;
+		w->generate();
+	}
+};
 
 int main()
 {
@@ -243,18 +316,12 @@ int main()
 	/// loop to get a key
 	pthread_create(&ptr, &pattr, &pthread_run, 0);
 
-	cv::namedWindow(name_wnd);
-	cv::setMouseCallback(name_wnd, mouse_clbck);
-	cv::Mat grph_out;
-
-	automatic_control::pidregulator pidx(100, 0.1, 0.7, 0.001, 0.28);
-	automatic_control::pidregulator pidy(100, 0.1, 0.7, 0.001, 0.28);
+	widget wg;
+	wg.pid = automatic_control::pidregulator<double>(100, 0.3, 0.7, 0.001, 0.28);
 	while(!done){
-		loop_time(pidx);
-		loop_time(pidy);
-		show_wnd(grph_out, pidx, pidy);
-		_sleep(30);
-		cv::waitKey(1);
+//		loop_time(pidxy);
+		wg.show_wnd();
+		cv::waitKey(10);
 	}
 
 	pthread_join(ptr, 0);
