@@ -124,16 +124,17 @@ struct pidregulator{
 	 * @brief calc
 	 * calc PID regulator
 	 */
-	void calc(){
-		T res1, res2, res3;
+	T calc(){
+		T res, res1, res2, res3;
 		res1 = proportional();
 		res2 = integral();
 		res3 = diff();
-		current += coeff0 * (res1 + res2 + res3);
+		res = coeff0 * (res1 + res2 + res3);
 
-		cout << counter << "\tc[" << current << "]\tp[" << res1 << "]\ti[" << res2 << "]\td[" << res3 << "]\n";
+		cout << counter << "\tc[" << res << "]\tp[" << res1 << "]\ti[" << res2 << "]\td[" << res3 << "]\n";
 
 		counter++;
+		return res;
 	}
 };
 
@@ -215,6 +216,7 @@ struct widget{
 	double min_value_tb		= -1;
 	int max_trackbar_val	= 1000;
 	vector<double> data;
+	double current			= 0;
 	automatic_control::pidregulator<double> pid;
 	cv::Mat mat;
 
@@ -223,13 +225,13 @@ struct widget{
 	}
 
 	void generate(){
-		pid.current = 0;
+		current = 0;
 		pid.needed = 100;
 		pid.intg = 0;
 		data.resize(0);
 		for(size_t i = 0; i < count_vec; i++){
-			data.push_back(pid.current);
-			pid.calc();
+			pid.current = current;
+			data.push_back(current = pid.calc());
 		}
 
 		mat = cv::Mat::zeros(800, 800, CV_8UC1);
