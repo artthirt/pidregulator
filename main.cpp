@@ -85,6 +85,13 @@ struct pidregulator{
 		prev_error2 = T();
 		coeff0 = coeff1 = coeff2 = coeff3 = T();
 	}
+	void reset(){
+		current = 0;
+		prev_error = 0;
+		prev_error2 = 0;
+		intg = 0;
+	}
+
 	/**
 	 * @brief error
 	 * @return
@@ -226,6 +233,7 @@ struct widget{
 
 	void generate(){
 		current = 0;
+		pid.reset();
 		pid.needed = 100;
 		pid.intg = 0;
 		data.resize(0);
@@ -249,6 +257,12 @@ struct widget{
 
 			cv::line(mat, p1, p2, cv::Scalar(255));
 			x += delta;
+		}
+		double y1 = (0 - min_y)/dy * mat.rows;
+		cv::line(mat, cv::Point(0, mat.rows - y1), cv::Point(mat.cols, mat.rows - y1), cv::Scalar(255), 2);
+		for(int i = 1; i < 5; i++){
+			double y1 = (100 * i - min_y)/dy * mat.rows;
+			cv::line(mat, cv::Point(0, mat.rows - y1), cv::Point(mat.cols, mat.rows - y1), cv::Scalar(255), 1);
 		}
 	}
 
@@ -319,7 +333,7 @@ int main()
 	pthread_create(&ptr, &pattr, &pthread_run, 0);
 
 	widget wg;
-	wg.pid = automatic_control::pidregulator<double>(100, 0.3, 0.7, 0.001, 0.28);
+	wg.pid = automatic_control::pidregulator<double>(100, 0.88, -0.409, 0.38, 0.113);
 	while(!done){
 //		loop_time(pidxy);
 		wg.show_wnd();
