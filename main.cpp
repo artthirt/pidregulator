@@ -86,6 +86,12 @@ struct pidregulator{
 		prev_error	= T();
 		//coeff0 = coeff1 = coeff2 = coeff3 = T();
 	}
+	void reset(){
+		current = 0;
+		prev_error = 0;
+		intg = 0;
+	}
+
 	/**
 	 * @brief error
 	 * @return
@@ -306,6 +312,12 @@ struct widget{
 
 			cv::line(mat, p1, p2, cv::Scalar(0, 0, 255));
 			x += delta;
+		}
+		double y1 = (0 - min_y)/dy * mat.rows;
+		cv::line(mat, cv::Point(0, mat.rows - y1), cv::Point(mat.cols, mat.rows - y1), cv::Scalar(255), 2);
+		for(int i = 1; i < 5; i++){
+			double y1 = (100 * i - min_y)/dy * mat.rows;
+			cv::line(mat, cv::Point(0, mat.rows - y1), cv::Point(mat.cols, mat.rows - y1), cv::Scalar(255), 1);
 		}
 	}
 
