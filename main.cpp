@@ -6,17 +6,22 @@
 #include <stdio.h>
 #include <random>
 #include <signal.h>
-#include <unistd.h>
 #include <atomic>
+#include <omp.h>
 
+
+#ifndef _MSC_VER
+#include <unistd.h>
 #include <X11/Xlib.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <random>
+#endif
 
 #include <opencv2/opencv.hpp>
 
 using namespace std;
+
+#ifndef _MSC_VER
 
 void _sleep(int64_t ms)
 {
@@ -26,10 +31,13 @@ void _sleep(int64_t ms)
 	clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, 0);
 }
 
+#endif
+
 const double mean = 0;
 const double sgm = 3;
 
 std::atomic<bool> done(false);
+
 
 cv::Vec2d operator* (const cv::Vec2d& v1, const cv::Vec2d & v2)
 {
@@ -186,6 +194,8 @@ generate_value genval;
 //	pid.calc(rnd);
 //}
 
+#ifndef _MSC_VER
+
 void handler(int s)
 {
 	done = true;
@@ -225,6 +235,8 @@ void* pthread_run(void* user)
 	XCloseDisplay(display);
 }
 
+#endif
+
 const string name_wnd("graph");
 
 typedef double (func)(double t);
@@ -263,7 +275,7 @@ struct widget{
 		rnd = normal_distribution<double>(0, 0.03);
 	}
 
-	void generate(func *f, size_t n_samples, double coeffs[], double sigmas[],
+	void generate(func *f, int n_samples, double coeffs[], double sigmas[],
 				  std::vector<double>& coeffs_output, double& error_out, double smooth_coeff){
 		double dt = max_t / count_vec;
 
@@ -284,7 +296,8 @@ struct widget{
 			vec_distrib[i] = std::uniform_real_distribution<double>(coeffs[i] - sigmas[i], coeffs[i] + sigmas[i]);
 		}
 #pragma omp parallel for shared(vec_distrib, smooth_coeff)
-		for(size_t iter = 0; iter < n_samples; iter++){
+		for(int iter = 0; iter < n_samples; iter++){
+//			cout << omp_get_thread_num() << endl;
 			//vector<double> data;
 			//vector<double> data_needed;
 
@@ -304,6 +317,7 @@ struct widget{
 			double error = 0;
 
 			double prev_val = 0;
+			double prev_val2 = 0;
 			for(size_t i = 0; i < count_vec; i++){
 				double t = i * dt;
 				double val_n = (*f)(t);
@@ -325,11 +339,12 @@ struct widget{
 				double sum = (val_n - val);
 				error += sum * sum;
 
-				if(i > 0){
-					double sum = val - prev_val;
+				if(i > 1){
+					double sum = val + 2 * prev_val - prev_val2;
 					error += smooth_coeff * sum * sum;
 				}
 
+				prev_val2 = prev_val;
 				prev_val = val;
 				//data.push_back(val);
 				//data_needed.push_back(val_n);
@@ -362,7 +377,7 @@ struct widget{
 
 #pragma omp critical
 			{
-				cout << counter << " error: " << prev_error << "; sigma_sum: " << sigma_sum << endl;
+				//cout << counter << " error: " << prev_error << "; sigma_sum: " << sigma_sum << endl;
 			}
 			counter++;
 		}
@@ -487,8 +502,8 @@ struct widget{
 
 typedef double d3[3];
 const d3 ranges[] = {
-	  {0, 1, 0}
-	, {1, 2, 2}
+	  {0, 1.5, 1}
+	, {1.5, 2, 1.5}
 	, {2, 2.5, 7}
 	, {2.5, 3, 2}
 	, {3, 4, 5}
@@ -508,6 +523,7 @@ double f_t(double t)
 
 int main()
 {
+#ifndef _MSC_VER
 	/// hook ctrl+c
 	struct sigaction sa;
 	sa.sa_handler = handler;
@@ -522,16 +538,18 @@ int main()
 	/// loop to get a key
 	pthread_create(&ptr, &pattr, &pthread_run, 0);
 
-	widget wg(300);
+#endif
+
+	widget wg(1000);
 	wg.fnc = &f_t;
 	wg.pid = automatic_control::pidregulator<double>(f_t(0), 0.4, 0.7, 0, 0);
 
-	double coeffs[] = {1, 1, 1, 1};
-	double sigmas[] = {10, 30, 5, 70};
+	double coeffs[] = {1, 5, 1, 10};
+	double sigmas[] = {5, 5, 2, 10};
 	std::vector<double> coeffs_output;
 	double error;
 
-	wg.generate(f_t, 2000000, coeffs, sigmas, coeffs_output, error, 10);
+	wg.generate(f_t, 1000000, coeffs, sigmas, coeffs_output, error, 0.005);
 
 	cout << "error: " << error << "; ";
 	for(size_t i = 0; i < coeffs_output.size(); i++){
@@ -543,10 +561,15 @@ int main()
 	while(!done){
 //		loop_time(pidxy);
 		wg.show_wnd();
-		cv::waitKey(10);
+		int key = cv::waitKey(10) & 0xFF;
+		if(key == 27){
+			break;
+		}
 	}
 
+#ifndef _MSC_VER
 	pthread_join(ptr, 0);
+#endif
 
 	return 0;
 }
