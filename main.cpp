@@ -315,6 +315,10 @@ struct widget{
 			double val_accel = 0;
 
 			double error = 0;
+			double sum_len1 = 0;
+			double sum_len2 = 0;
+
+			cv::Vec2d pt1, pt2, pt1_0, pt2_0;
 
 			double prev_val = 0;
 			double prev_val2 = 0;
@@ -331,6 +335,10 @@ struct widget{
 				val_speed -= mass * grav * dt;
 				//val_speed += rnd(generator_rnd);
 				val += val_speed;
+
+				pt1 = cv::Vec2d(t, val_n);
+				pt2 = cv::Vec2d(t, val);
+
 	//			if(val < 0){
 	//				val = 0;
 	//				val_speed = 0;
@@ -340,15 +348,25 @@ struct widget{
 				error += sum * sum;
 
 				if(i > 1){
-					double sum = val + 2 * prev_val - prev_val2;
-					error += smooth_coeff * sum * sum;
+//					double sum = val + 2 * prev_val - prev_val2;
+//					error += smooth_coeff * sum * sum;
+					double l1 = cv::norm(pt1 - pt1_0);
+					double l2 = cv::norm(pt2 - pt2_0);
+
+					sum_len1 += l1;
+					sum_len2 += l2;
 				}
+
+				pt1_0 = pt1;
+				pt2_0 = pt2;
 
 				prev_val2 = prev_val;
 				prev_val = val;
 				//data.push_back(val);
 				//data_needed.push_back(val_n);
 			}
+
+			error += smooth_coeff * std::abs(sum_len2 - sum_len1);
 
 			if(error < prev_error){
 #pragma omp critical
@@ -545,15 +563,15 @@ int main()
 	wg.pid = automatic_control::pidregulator<double>(f_t(0), 0.4, 0.7, 0, 0);
 
 	double coeffs[] = {1, 5, 1, 10};
-	double sigmas[] = {5, 5, 2, 10};
+	double sigmas[] = {10, 50, 2, 30};
 	std::vector<double> coeffs_output;
 	double error;
 
-	wg.generate(f_t, 1000000, coeffs, sigmas, coeffs_output, error, 0.005);
+	wg.generate(f_t, 100000, coeffs, sigmas, coeffs_output, error, 5.);
 
 	cout << "error: " << error << "; ";
 	for(size_t i = 0; i < coeffs_output.size(); i++){
-		cout << "coeff " << i << "[" << coeffs_output[i] << "] ";
+		cout << "coeff " << i << " [ " << coeffs_output[i] << " ]; ";
 		wg.pid.coeffs[i] = coeffs_output[i];
 	}
 	cout << endl;
