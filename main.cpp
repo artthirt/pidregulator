@@ -567,7 +567,7 @@ int main()
 	std::vector<double> coeffs_output;
 	double error;
 
-	wg.generate(f_t, 100000, coeffs, sigmas, coeffs_output, error, 5.);
+	wg.generate(f_t, 100000, coeffs, sigmas, coeffs_output, error, 4.);
 
 	cout << "error: " << error << "; ";
 	for(size_t i = 0; i < coeffs_output.size(); i++){
