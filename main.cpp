@@ -241,6 +241,15 @@ const string name_wnd("graph");
 
 typedef double (func)(double t);
 
+template< class Func >
+struct Functor{
+	typedef Func *_Func;
+
+	_Func func;
+
+};
+
+template <class Func>
 struct widget{
 
 	bool trigger_mouse		= false;
@@ -263,7 +272,7 @@ struct widget{
 	std::default_random_engine generator_rnd;
 	cv::Mat mat;
 
-	func *fnc;
+	Func fnc;
 
 	static double sample_f(double d){
 		return 0;
@@ -271,11 +280,10 @@ struct widget{
 
 	widget(size_t cnt_vec = 100){
 		count_vec = cnt_vec;
-		fnc = &widget::sample_f;
 		rnd = normal_distribution<double>(0, 0.03);
 	}
 
-	void generate(func *f, int n_samples, double coeffs[], double sigmas[],
+	void generate(Func &f, int n_samples, double coeffs[], double sigmas[],
 				  std::vector<double>& coeffs_output, double& error_out, double smooth_coeff){
 		double dt = max_t / count_vec;
 
@@ -324,8 +332,8 @@ struct widget{
 			double prev_val2 = 0;
 			for(size_t i = 0; i < count_vec; i++){
 				double t = i * dt;
-				double val_n = (*f)(t);
-				double val_u = koeff * pid.calc(val, val_n, dt);
+				double val_n = f(t);
+				double val_u = koeff * pid.calc(val, val_n, 1);
 				if(val_u > max_u)
 					val_u = max_u;
 				if(val_u < min_u)
@@ -401,7 +409,7 @@ struct widget{
 		}
 	}
 
-	void generate(func *f){
+	void generate(Func &f){
 		pid.init();
 		data.resize(0);
 		data_needed.resize(0);
@@ -411,7 +419,7 @@ struct widget{
 		double dt = max_t / count_vec;
 		for(size_t i = 0; i < count_vec; i++){
 			double t = i * dt;
-			double val_n = (*f)(t);
+			double val_n = f(t);
 			double val_u = koeff * pid.calc(val, val_n, dt);
 			if(val_u > max_u)
 				val_u = max_u;
@@ -529,15 +537,27 @@ const d3 ranges[] = {
 	, {4.5, 100, 4}
 };
 
-double f_t(double t)
-{
-	int cnt = sizeof(ranges)/sizeof(*ranges);
-	for(int i = 0; i < cnt; i++){
-		if(t >= ranges[i][0] && t < ranges[i][1])
-			return ranges[i][2];
+struct F_t{
+	std::normal_distribution< double > rnd;
+	std::default_random_engine generator_rnd;
+
+	F_t(){
+		rnd = normal_distribution<double>(0, 0.03);
 	}
-	return 0;
-}
+
+	double f_t(double t)
+	{
+		int cnt = sizeof(ranges)/sizeof(*ranges);
+		for(int i = 0; i < cnt; i++){
+			if(t >= ranges[i][0] && t < ranges[i][1])
+				return ranges[i][2];
+		}
+		return 0;
+	}
+	double operator()(double t){
+		return f_t(t);
+	}
+};
 
 int main()
 {
@@ -558,8 +578,10 @@ int main()
 
 #endif
 
-	widget wg(1000);
-	wg.fnc = &f_t;
+	F_t f_t;
+
+	widget<F_t> wg(1000);
+	wg.fnc = f_t;
 	wg.pid = automatic_control::pidregulator<double>(f_t(0), 0.4, 0.7, 0, 0);
 
 	double coeffs[] = {1, 5, 1, 10};
